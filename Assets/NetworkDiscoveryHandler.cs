@@ -6,13 +6,47 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Text;
+using System.Collections.Generic;
+using Object = UnityEngine.Object;
 
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEditor.Events;
+#endif
+
+[RequireComponent(typeof(ExampleNetworkDiscovery))]
+[RequireComponent(typeof(NetworkManager))]
 public class NetworkDiscoveryHandler : MonoBehaviour
 {
     [SerializeField] private Text messageText;
-    [SerializeField] private int networkDiscoveryPort=8001;
-    private UdpClient udpClient;
 
+    [SerializeField, HideInInspector]
+    ExampleNetworkDiscovery m_Discovery;
+
+    NetworkManager m_NetworkManager;
+
+    Dictionary<IPAddress, DiscoveryResponseData> discoveredServers = new Dictionary<IPAddress, DiscoveryResponseData>();
+
+
+    void Awake()
+    {
+        m_Discovery = GetComponent<ExampleNetworkDiscovery>();
+        m_NetworkManager = GetComponent<NetworkManager>();
+
+        if (m_Discovery != null) {
+            m_Discovery.OnServerFound.AddListener(OnServerFound);
+        }
+    }
+
+
+    void OnServerFound(IPEndPoint sender, DiscoveryResponseData response)
+    {
+        Debug.Log("Discovered Server");
+        discoveredServers[sender.Address] = response;
+        UnityTransport transport = (UnityTransport)m_NetworkManager.NetworkConfig.NetworkTransport;
+        transport.SetConnectionData(sender.Address.ToString(), response.Port);
+        m_NetworkManager.StartClient();
+    }
 
     public void StartHost(bool isClient)
     {
@@ -26,7 +60,7 @@ public class NetworkDiscoveryHandler : MonoBehaviour
             networkManager.StartServer();
             messageText.text = "Server Started";
             Debug.Log("Is Server " + networkManager.IsServer);
-            BroadcastServer();
+            StartServerBroadcast();
         }
         else
         {
@@ -38,79 +72,16 @@ public class NetworkDiscoveryHandler : MonoBehaviour
 
     private void DiscoverAndConnect()
     {
-        ListenForServer();
+            m_Discovery.StartClient();
+            m_Discovery.ClientBroadcast(new DiscoveryBroadcastData());
     }
 
-    //This Method Listens To Server Broadcasted accross network
-    private async void ListenForServer()
-    {
-
-        udpClient = new UdpClient(networkDiscoveryPort);
-        Debug.Log("Listening for discovery server at " + networkDiscoveryPort);
-        while (true)
-        {
-            UdpReceiveResult receivedResults = await udpClient.ReceiveAsync();
-            string message = Encoding.UTF8.GetString(receivedResults.Buffer);
-
-            if (message == "UnityNetcodeServer")
-            {
-                string serverAddress = receivedResults.RemoteEndPoint.Address.ToString();
-                Debug.Log($"Server discovered at {serverAddress}");
-                messageText.text = $"Server discovered at {serverAddress}";
-                ConnectToServer(serverAddress);
-                break; // Optional: Stop listening after connecting to a server
-            }
-        }
+    private void StartServerBroadcast() {
+        m_Discovery.StartServer();
     }
 
-    //This Method Broadcasts Network Discovery on Network
-    private async void BroadcastServer()
-    {
-        udpClient = new UdpClient();
-        udpClient.EnableBroadcast = true;
-        while (true)
-        {
-            Debug.Log("Broadcasting server at Network Discovery at" + IPAddress.Broadcast +":"+ networkDiscoveryPort);
-            var serverMessage = Encoding.UTF8.GetBytes("UnityNetcodeServer");
-            IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, networkDiscoveryPort);
-
-            await udpClient.SendAsync(serverMessage, serverMessage.Length, endPoint);
-            await Task.Delay(1000); // Broadcast every second
-        }
+    private void StopServerBroadcast() {
+        m_Discovery.StopDiscovery();
     }
-
-    private void ConnectToServer(string serverAddress)
-    {
-
-        if (NetworkManager.Singleton != null)
-        {
-            // Configure server address
-            UnityTransport transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-            if (transport != null)
-            {
-                transport.SetConnectionData(serverAddress, 7777); // Use the appropriate port
-            }
-
-            // Start the client connection
-            NetworkManager.Singleton.StartClient();
-            Debug.Log("Client started and connected to server at: " + serverAddress);
-            Debug.Log("Is Cleint " + NetworkManager.Singleton.IsClient);
-        }
-        else
-        {
-            Debug.LogError("NetworkManager instance not found!");
-        }
-    }
-
-
-
-
-
-    private void OnDestroy()
-    {
-        udpClient.Close();
-    }
-
-
 
 }
