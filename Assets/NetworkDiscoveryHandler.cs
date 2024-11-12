@@ -18,14 +18,16 @@ using UnityEditor.Events;
 [RequireComponent(typeof(NetworkManager))]
 public class NetworkDiscoveryHandler : MonoBehaviour
 {
-    [SerializeField] private Text messageText;
+    //[SerializeField] private Text messageText;
+
+    public string statusText="Waiting for connection...";
 
     [SerializeField, HideInInspector]
     ExampleNetworkDiscovery m_Discovery;
 
     NetworkManager m_NetworkManager;
 
-    Dictionary<IPAddress, DiscoveryResponseData> discoveredServers = new Dictionary<IPAddress, DiscoveryResponseData>();
+    public Dictionary<IPAddress, DiscoveryResponseData> discoveredServers = new Dictionary<IPAddress, DiscoveryResponseData>();
 
 
     void Awake()
@@ -43,11 +45,23 @@ public class NetworkDiscoveryHandler : MonoBehaviour
     {
         Debug.Log("Discovered Server");
         discoveredServers[sender.Address] = response;
-        UnityTransport transport = (UnityTransport)m_NetworkManager.NetworkConfig.NetworkTransport;
-        transport.SetConnectionData(sender.Address.ToString(), response.Port);
-        m_NetworkManager.StartClient();
+        //UnityTransport transport = (UnityTransport)m_NetworkManager.NetworkConfig.NetworkTransport;
+        //transport.SetConnectionData(sender.Address.ToString(), response.Port);
+        //m_NetworkManager.StartClient();
     }
 
+    //Client Method
+    public void ConnectToServer(string serverAddress,ushort port)
+    {
+        UnityTransport transport = (UnityTransport)m_NetworkManager.NetworkConfig.NetworkTransport;
+        transport.SetConnectionData(serverAddress, port);
+        if (m_NetworkManager.StartClient()) {
+            Debug.Log("Connected to Server:");
+            statusText = "Connected to Server " + serverAddress + ":" + port;
+        }
+    }
+
+    //Pass true for client and false for server
     public void StartHost(bool isClient)
     {
         var networkManager = NetworkManager.Singleton;
@@ -57,23 +71,37 @@ public class NetworkDiscoveryHandler : MonoBehaviour
         {
             // Start server
 
-            networkManager.StartServer();
-            messageText.text = "Server Started";
-            Debug.Log("Is Server " + networkManager.IsServer);
-            StartServerBroadcast();
+            bool isStarted = networkManager.StartServer();
+            if (isStarted) {
+                Debug.Log("Server has started.");
+                Debug.Log("Is Server " + networkManager.IsServer);
+                StartServerBroadcast();
+                RegisterClientCallBacks();
+            }
         }
         else
         {
-            
+            Debug.Log("Starting Client");
             // Start client with discovery
             DiscoverAndConnect();
         }
+    }
+
+    public void RegisterClientCallBacks() {
+        GameObject.FindGameObjectWithTag("MessageHandler").GetComponent<MessageHandler>().RegisterCallBacks();
     }
 
     private void DiscoverAndConnect()
     {
             m_Discovery.StartClient();
             m_Discovery.ClientBroadcast(new DiscoveryBroadcastData());
+    }
+
+    public void DiscoverServers()
+    {
+        Debug.Log("Running Discover Service Call");
+        m_Discovery.StartClient();
+        m_Discovery.ClientBroadcast(new DiscoveryBroadcastData());
     }
 
     private void StartServerBroadcast() {
